@@ -1,6 +1,8 @@
 # 弈境 · 中国象棋
 
 一个免注册、浏览器即开即玩的中国象棋小游戏。纸木色棋盘与中文界面，支持电脑和手机。
+<img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/d3ddab0f-eadf-417b-b661-c5128437c252" />
+
 
 ## 已提供的功能
 
