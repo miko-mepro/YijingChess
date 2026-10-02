@@ -14,6 +14,8 @@ const MAX_ROOMS = 200;
 const MAX_SESSIONS = 2000;
 const MAX_SPECTATORS = 100;
 const RECONNECT_MS = 90_000;
+// 每方每回合有 90 秒思考时间；超时判负，任一方断线时暂停计时。
+const TURN_MS = 90_000;
 const sessions = new Map();
 const rooms = new Map();
 // 只在服务端洗牌，使用密码学随机数而非客户端提供的随机身份。
@@ -91,7 +93,32 @@ function lobbyData() {
   };
 }
 function broadcastLobby() { io.emit('lobby:state', lobbyData()); }
+// 任一方离线时冻结当前回合计时，双方恢复在线后再累计暂停时长。
+function syncTurnPause(room) {
+  if (room.status !== 'playing') return;
+  const stalled = SIDES.some((side) => !connected(sessions.get(room.seats[side])));
+  if (stalled && !room.turnPausedAt) room.turnPausedAt = Date.now();
+  else if (!stalled && room.turnPausedAt) {
+    room.turnPausedMs = (room.turnPausedMs || 0) + (Date.now() - room.turnPausedAt);
+    room.turnPausedAt = null;
+  }
+}
+// 计算当前回合剩余时间；该值随房间快照发送，客户端只负责展示。
+function turnClock(room) {
+  if (room.status !== 'playing' || !room.turnStartedAt) return { remainingMs: TURN_MS, paused: false };
+  const now = room.turnPausedAt || Date.now();
+  const elapsed = now - room.turnStartedAt - (room.turnPausedMs || 0);
+  return { remainingMs: Math.max(0, TURN_MS - elapsed), paused: Boolean(room.turnPausedAt) };
+}
+// 新回合开始时重置 90 秒时钟及断线暂停累计。
+function resetTurnClock(room) {
+  room.turnStartedAt = Date.now();
+  room.turnPausedMs = 0;
+  room.turnPausedAt = null;
+}
 function snapshot(room, session) {
+  // 同步暂停状态，确保主动同步和广播快照使用同一计时基准。
+  syncTurnPause(room);
   return {
     id: room.id, name: room.name, mode: room.mode, status: room.status,
     role: sideOf(room, session) || 'spectator',
@@ -101,6 +128,7 @@ function snapshot(room, session) {
     game: publicGame(room.game),
     drawOffer: room.drawOffer, chat: room.chat,
     reconnectSeconds: RECONNECT_MS / 1000,
+    turn: turnClock(room), turnSeconds: TURN_MS / 1000, serverNow: Date.now(),
   };
 }
 function broadcastRoom(room) {
@@ -117,6 +145,9 @@ function announce(room, text) {
 function finish(room, winner, reason) {
   room.game.result = { winner, reason };
   room.status = 'finished';
+  room.turnStartedAt = null;
+  room.turnPausedAt = null;
+  room.turnPausedMs = 0;
   room.ready = { red: false, black: false };
   room.drawOffer = null;
   announce(room, `${winner ? `${winner === 'red' ? '红' : '黑'}方胜` : '和棋'} · ${reason}`);
@@ -217,6 +248,7 @@ io.on('connection', (socket) => {
     const room = { id: allocateRoomId(), name: cleanText(data.name, 32, `${session.name}的棋室`), mode,
       status: 'waiting', seats: { red: null, black: null }, ready: { red: false, black: false },
       spectators: new Set(), game: createGame(mode), drawOffer: null, chat: [],
+      turnStartedAt: null, turnPausedAt: null, turnPausedMs: 0,
       createdAt: Date.now(), updatedAt: Date.now() };
     room.seats[side] = session.token;
     rooms.set(room.id, room);
@@ -266,6 +298,7 @@ io.on('connection', (socket) => {
     if (SIDES.every((s) => room.seats[s] && room.ready[s] && connected(sessions.get(room.seats[s])))) {
       room.game = createGame(room.mode);
       room.status = 'playing';
+      resetTurnClock(room);
       room.ready = { red: false, black: false };
       room.drawOffer = null;
       announce(room, `双方已准备，${modeLabel(room.mode)}开始 · 红方先行`);
@@ -283,6 +316,7 @@ io.on('connection', (socket) => {
     room.game = playMove(room.game,
       { x: data.from?.x, y: data.from?.y }, { x: data.to?.x, y: data.to?.y });
     room.drawOffer = null;
+    resetTurnClock(room);
     if (room.game.result) finish(room, room.game.result.winner, room.game.result.reason);
     broadcastRoom(room);
     if (room.status === 'finished') broadcastLobby();
@@ -376,6 +410,19 @@ const cleanup = setInterval(() => {
   }
 }, 2000);
 cleanup.unref();
+// 服务端每秒裁决超时，客户端倒计时仅展示、不参与判负。
+const turnTimeout = setInterval(() => {
+  for (const room of rooms.values()) {
+    if (room.status !== 'playing') continue;
+    syncTurnPause(room);
+    const clock = turnClock(room);
+    if (clock.paused || clock.remainingMs > 0) continue;
+    finish(room, opposite(room.game.turn), '出棋超时');
+    broadcastRoom(room);
+    broadcastLobby();
+  }
+}, 1000);
+turnTimeout.unref();
 
 httpServer.listen(PORT, HOST, () => {
   console.log(`\n弈境象棋已启动：http://localhost:${PORT}`);
@@ -388,5 +435,5 @@ httpServer.listen(PORT, HOST, () => {
 });
 // 容器关闭时停止接收请求并关闭长连接，避免挂住退出流程。
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => { clearInterval(cleanup); io.close(() => process.exit(0)); });
+  process.on(signal, () => { clearInterval(cleanup); clearInterval(turnTimeout); io.close(() => process.exit(0)); });
 }
