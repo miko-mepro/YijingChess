@@ -1,0 +1,8 @@
+# 本地依赖、环境配置和运行日志不进入版本库。
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+coverage/
