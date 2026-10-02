@@ -1,13 +1,16 @@
-import { initialBoard, legalTargets, opposite, pieceLabel } from './xiangqi.js';
+import { initialBoard, legalTargets, opposite, pieceLabel, pieceSide, modeLabel } from './xiangqi.js';
 
 // 页面只保存自己的身份和交互状态，棋盘、玩家和胜负一律以服务端快照为准。
 const $ = (id) => document.getElementById(id);
 const icon = (name) => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const state = { room: null, lobby: { online: 0, rooms: [] }, filter: 'all', query: '',
   selected: null, targets: [], flipped: false, cursor: { x: 0, y: 9 }, keyboard: false,
-  moving: false, session: null, online: false, chatKey: '', historyKey: '' };
+  moving: false, session: null, online: false, chatKey: '', historyKey: '', captureSide: 'red' };
 const invitation = new URL(location.href).searchParams.get('room');
 let invitationHandled = false;
+// 动画只响应新的实时落子；刷新、观战加入和重开不会回放历史乌龙。
+let ownGoalTimer = null;
+let animatedKingSide = null;
 
 // 某些隐私模式禁用 Storage，降级为当前页面内存，不阻止用户游玩。
 const memory = new Map();
@@ -107,10 +110,14 @@ socket.on('room:state', (room) => {
   invitationHandled = true;
   const fresh = !state.room || state.room.id !== room.id || state.room.role !== room.role;
   const changed = fresh || state.room.game.ply !== room.game.ply || state.room.status !== room.status;
+  const reset = fresh || room.game.ply < state.room.game.ply;
+  const ownGoal = !fresh && room.game.ply > state.room.game.ply && room.game.lastMove?.ownGoal;
   state.room = room;
+  if (reset) stopOwnGoalAnimation();
   if (fresh) {
     closeDialogs();
     state.flipped = room.role === 'black';
+    state.captureSide = room.role === 'black' ? 'black' : 'red';
     state.chatKey = '';
     state.historyKey = '';
     state.keyboard = false;
@@ -122,8 +129,10 @@ socket.on('room:state', (room) => {
   $('lobby-view').hidden = true;
   $('room-view').hidden = false;
   renderRoom();
+  if (ownGoal) playOwnGoalAnimation(room.game.lastMove);
 });
 socket.on('room:left', () => {
+  stopOwnGoalAnimation();
   state.room = null;
   clearSelection(false);
   $('room-view').hidden = true;
@@ -154,7 +163,7 @@ function renderLobby() {
   }
   const playerName = (p) => p ? `<span class="player-name" title="${escapeHtml(p.name)}${p.online ? '' : ' · 离线'}">${escapeHtml(p.name)}</span>` : '<span class="waiting-seat">虚位以待</span>';
   $('room-list').innerHTML = rooms.map((room) => `<article class="room-row">
-    <div class="room-detail"><span class="room-symbol">弈</span><div><h3 title="${escapeHtml(room.name)}">${escapeHtml(room.name)}</h3><small>NO. ${room.id}</small></div></div>
+    <div class="room-detail"><span class="room-symbol">弈</span><div><h3 title="${escapeHtml(room.name)}">${escapeHtml(room.name)}</h3><small>NO. ${room.id} <span class="mode-pill${room.mode === 'chaos' ? ' chaos' : ''}">${modeLabel(room.mode)}</span></small></div></div>
     <div class="room-players"><span class="side-dot"></span>${playerName(room.red)}<span class="vs">VS</span><span class="side-dot black"></span>${playerName(room.black)}</div>
     <span class="status-badge ${room.status}">${room.status === 'waiting' ? '等待开局' : room.status === 'playing' ? '正在对弈' : '本局结束'}</span>
     <span class="spectator-cell">${icon('eye')}${room.spectators}</span>
@@ -190,7 +199,7 @@ $('list-create').addEventListener('click', openCreate);
 $('create-form').addEventListener('submit', (event) => {
   event.preventDefault();
   busy(event.submitter, () => request('room:create', { name: $('create-name').value,
-    side: new FormData($('create-form')).get('side') }));
+    side: new FormData($('create-form')).get('side'), gameMode: new FormData($('create-form')).get('gameMode') }));
 });
 $('quick-join').addEventListener('click', () => { $('join-id').value = ''; dialog('join-dialog'); });
 $('join-form').addEventListener('submit', (event) => {
@@ -248,9 +257,12 @@ function boardMarkup(board, interactive = false) {
       const last = interactive && [state.room.game.lastMove?.from, state.room.game.lastMove?.to].some((p) => p?.x === x && p?.y === y);
       const cursor = interactive && state.keyboard && state.cursor.x === x && state.cursor.y === y;
       html += `<g${interactive ? ` class="chess-cell" data-x="${x}" data-y="${y}"` : ''} transform="translate(${px} ${py})">`;
-      if (interactive) html += `<title>${piece ? `${piece.side === 'red' ? '红' : '黑'}方${pieceLabel(piece)}` : '空位'} · ${x+1}列${y+1}行</title><rect x="-27" y="-27" width="54" height="54" fill="transparent"/>`;
+      const description = !piece ? '空位' : piece.hidden
+        ? `未知棋（${piece.owner === 'red' ? '红' : '黑'}方操作，原路线：${pieceLabel(piece.route)}）`
+        : `${piece.side === 'red' ? '红' : '黑'}方${pieceLabel(piece)}`;
+      if (interactive) html += `<title>${description} · ${x+1}列${y+1}行</title><rect x="-27" y="-27" width="54" height="54" fill="transparent"/>`;
       if (last) html += '<rect x="-24" y="-24" width="48" height="48" rx="7" class="last-move-mark"/>';
-      if (piece) html += `<circle r="23" class="chess-piece"/><circle r="19.5" class="chess-piece-ring"/><text y="-1" class="chess-text ${piece.side}">${pieceLabel(piece)}</text>`;
+      if (piece) html += `<circle r="23" class="chess-piece${piece.hidden ? ' hidden-piece' : ''}"/><circle r="19.5" class="chess-piece-ring"/><text y="-1" class="chess-text ${piece.hidden ? 'unknown' : piece.side}">${pieceLabel(piece)}</text>`;
       if (selected) html += '<circle r="25" class="selected-piece"/>';
       if (target) html += piece ? '<circle r="25" class="capture-target"/>' : '<circle r="7" class="legal-target"/>';
       if (cursor) html += '<rect x="-26" y="-26" width="52" height="52" rx="6" class="keyboard-cursor"/>';
@@ -260,7 +272,11 @@ function boardMarkup(board, interactive = false) {
   return html;
 }
 $('preview-board').innerHTML = boardMarkup(initialBoard());
-function renderBoard() { if (state.room) $('game-board').innerHTML = boardMarkup(state.room.game.board, true); }
+function renderBoard() {
+  if (!state.room) return;
+  $('game-board').innerHTML = boardMarkup(state.room.game.board, true);
+  positionKingReaction();
+}
 function clearSelection(render = true) { state.selected = null; state.targets = []; if (render) renderBoard(); }
 function canAct() {
   const room = state.room;
@@ -277,11 +293,12 @@ async function selectPoint(point) {
   }
   const piece = state.room.game.board[point.y][point.x];
   if (state.selected?.x === point.x && state.selected?.y === point.y) { clearSelection(); return; }
-  if (piece?.side === state.room.role) {
+  if (pieceSide(piece) === state.room.role) {
     state.selected = point;
     state.targets = legalTargets(state.room.game.board, point, state.room.role);
     renderBoard();
-    $('board-hint').textContent = state.targets.length ? '点击圆点走棋，圈出的棋子可以吃掉' : '这枚棋子当前没有合法落点';
+    const route = piece.hidden ? `未知棋 · 原路线：${pieceLabel(piece.route)} · ` : '';
+    $('board-hint').textContent = route + (state.targets.length ? '点击圆点落子，圈出的棋子可以吃掉' : '当前没有合法落点');
     return;
   }
   if (!state.selected) return;
@@ -312,6 +329,76 @@ $('game-board').addEventListener('keydown', (event) => {
   else if (event.key === 'Escape') { clearSelection(); }
 });
 $('flip-board').addEventListener('click', () => { state.flipped = !state.flipped; renderBoard(); });
+
+// 左右吃子栏只依赖公开棋谱；始终按实际行棋方分类，而不是翻明后移动棋的阵营。
+function renderCaptures() {
+  const chaos = state.room.mode === 'chaos';
+  $('board-stage').classList.toggle('chaos-stage', chaos);
+  for (const id of ['won-panel', 'own-goal-panel', 'capture-tools']) $(id).hidden = !chaos;
+  if (!chaos) return;
+  document.querySelectorAll('[data-capture-side]').forEach((button) => {
+    const selected = button.dataset.captureSide === state.captureSide;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  const captures = state.room.game.history.filter((move) => move.captured && move.actor === state.captureSide);
+  const won = captures.filter((move) => move.captured.side !== state.captureSide);
+  const own = captures.filter((move) => move.captured.side === state.captureSide);
+  const markup = (moves) => moves.length ? moves.map((move) => `<span class="taken-piece ${move.captured.side}" title="${move.captured.side === 'red' ? '红' : '黑'}方${pieceLabel(move.captured)} · 第${move.ply}步被吃">${pieceLabel(move.captured)}</span>`).join('')
+    : '<span class="capture-empty">暂无</span>';
+  $('won-count').textContent = won.length;
+  $('own-goal-count').textContent = own.length;
+  $('won-pieces').innerHTML = markup(won);
+  $('own-goal-pieces').innerHTML = markup(own);
+}
+$('capture-tools').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-capture-side]');
+  if (!button || !state.room) return;
+  state.captureSide = button.dataset.captureSide;
+  renderCaptures();
+});
+
+// 将表情定位到当前可见将帅的交点，坐标随翻盘及窗口缩放同步换算。
+function positionKingReaction() {
+  if (!animatedKingSide || !state.room) return;
+  const board = state.room.game.board;
+  let king = null;
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 9; x++) {
+    if (board[y][x]?.type === 'k' && board[y][x]?.side === animatedKingSide) king = { x, y };
+  }
+  const reaction = $('king-reaction');
+  if (!king) { reaction.hidden = true; return; }
+  const rect = $('game-board').getBoundingClientRect();
+  const wrap = $('game-board').parentElement.getBoundingClientRect();
+  const x = state.flipped ? 8 - king.x : king.x;
+  const y = state.flipped ? 9 - king.y : king.y;
+  reaction.style.left = `${rect.left - wrap.left + (54 + x * 54) / 540 * rect.width}px`;
+  reaction.style.top = `${rect.top - wrap.top + (57 + y * 54) / 600 * rect.height}px`;
+}
+function stopOwnGoalAnimation() {
+  clearTimeout(ownGoalTimer);
+  ownGoalTimer = null;
+  animatedKingSide = null;
+  for (const id of ['king-reaction', 'own-goal-announcement']) {
+    $(id).hidden = true;
+    $(id).classList.remove('active');
+  }
+}
+function playOwnGoalAnimation(move) {
+  stopOwnGoalAnimation();
+  animatedKingSide = opposite(move.actor);
+  const messages = ['糟了！！！', 'OH NOOOOOOOOO！！', '自己人啊！！！', '这下乌龙了！！！'];
+  $('own-goal-announcement').textContent = messages[move.ply % messages.length];
+  for (const id of ['king-reaction', 'own-goal-announcement']) {
+    $(id).hidden = false;
+    // 连续乌龙时重新启动 CSS 渐入渐隐，不重复创建计时器或遗留遮罩。
+    void $(id).offsetWidth;
+    $(id).classList.add('active');
+  }
+  positionKingReaction();
+  ownGoalTimer = setTimeout(stopOwnGoalAnimation, 2800);
+}
+window.addEventListener('resize', positionKingReaction);
 
 // 对局面板按公开角色设置按钮；观战者从界面和服务器两层被限制走棋。
 function renderPlayer(side) {
@@ -344,7 +431,8 @@ function renderStatus() {
     status = `等待${side === 'red' ? '红' : '黑'}方重连 · ${left} 秒`;
     hint = '对局暂时暂停，超时未恢复将判负';
   } else {
-    status = `${room.game.turn === 'red' ? '红' : '黑'}方行棋${room.game.check ? ' · 将军！' : ''}`;
+    const checked = room.game.checkedSides || (room.game.check ? [room.game.turn] : []);
+    status = `${room.game.turn === 'red' ? '红' : '黑'}方行棋${checked.length ? ` · ${checked.map((side) => side === 'red' ? '红方' : '黑方').join('、')}被将军！` : ''}`;
     hint = room.role === 'spectator' ? '你正在观战 · 棋局实时同步' : room.role === room.game.turn ? '轮到你了，选择棋子落子' : '对手正在思考，稍候片刻';
   }
   $('game-status').textContent = status;
@@ -400,10 +488,12 @@ function renderRoom() {
   $('room-title').textContent = room.name;
   $('room-id').textContent = room.id;
   $('role-label').textContent = room.role === 'spectator' ? '观战席' : room.role === 'red' ? '执红' : '执黑';
+  $('room-mode').textContent = modeLabel(room.mode);
+  $('room-mode').className = `mode-pill${room.mode === 'chaos' ? ' chaos' : ''}`;
   $('ply-count').textContent = `第 ${Math.floor(room.game.ply / 2) + 1} 回合`;
   $('spectator-count').textContent = `${room.spectators.length} 人观战`;
   $('spectator-count').title = room.spectators.map((p) => p.name).join('、');
-  renderPlayer('red'); renderPlayer('black'); renderBoard(); renderStatus(); renderControls(); renderChat(); renderHistory();
+  renderPlayer('red'); renderPlayer('black'); renderCaptures(); renderBoard(); renderStatus(); renderControls(); renderChat(); renderHistory();
 }
 $('ready-button').addEventListener('click', () => busy($('ready-button'), () => request('game:ready')));
 $('sit-button').addEventListener('click', () => busy($('sit-button'), () => request('room:sit')));
