@@ -11,6 +11,9 @@ let invitationHandled = false;
 // 动画只响应新的实时落子；刷新、观战加入和重开不会回放历史乌龙。
 let ownGoalTimer = null;
 let animatedKingSide = null;
+// 出棋提醒横幅的自动收尾计时器；动画总时长与 CSS 保持 3 秒一致。
+let turnBannerTimer = null;
+const TURN_BANNER_MS = 3000;
 // 胜负短句只在对应视角生成：玩家一条自己的结果，观战者两条双方结果。
 let verdictTimer = null;
 const VERDICT_DURATION = 2400;
@@ -115,15 +118,20 @@ socket.on('lobby:state', (lobby) => { state.lobby = lobby; renderLobby(); });
 socket.on('room:state', (room) => {
   // 恢复或成功进入房间后，邀请已消费；退出后的重连不应再次弹出旧邀请。
   invitationHandled = true;
-  const fresh = !state.room || state.room.id !== room.id || state.room.role !== room.role;
-  const changed = fresh || state.room.game.ply !== room.game.ply || state.room.status !== room.status;
-  const reset = fresh || room.game.ply < state.room.game.ply
-    || (state.room.status === 'finished' && room.status !== 'finished');
-  const ownGoal = !fresh && room.game.ply > state.room.game.ply && room.game.lastMove?.ownGoal;
-  const justEnded = !fresh && state.room.status !== 'finished' && room.status === 'finished' && room.game.result?.winner;
+  // 保留上一份快照，用来判断是否真正发生了行棋方切换。
+  const before = state.room;
+  const fresh = !before || before.id !== room.id || before.role !== room.role;
+  const changed = fresh || before.game.ply !== room.game.ply || before.status !== room.status;
+  const reset = fresh || room.game.ply < before.game.ply
+    || (before.status === 'finished' && room.status !== 'finished');
+  const ownGoal = !fresh && room.game.ply > before.game.ply && room.game.lastMove?.ownGoal;
+  const justEnded = !fresh && before.status !== 'finished' && room.status === 'finished' && room.game.result?.winner;
+  // 开局与每次换手才提醒；加入进行中的对局、重连和重复快照不重播横幅。
+  const turnStarted = room.status === 'playing' && !fresh
+    && (before.status !== 'playing' || before.game.turn !== room.game.turn);
   state.room = room;
   state.snapshotAt = Date.now();
-  if (reset) { stopOwnGoalAnimation(); stopVerdictAnimation(); }
+  if (reset) { stopOwnGoalAnimation(); stopVerdictAnimation(); stopTurnBanner(); }
   if (fresh) {
     closeDialogs();
     state.flipped = room.role === 'black';
@@ -142,10 +150,14 @@ socket.on('room:state', (room) => {
   // 终局优先于乌龙大字；重复快照、刷新及结束后加入观战不重播胜负特效。
   if (justEnded) playVerdictAnimation(room);
   else if (ownGoal) playOwnGoalAnimation(room.game.lastMove);
+  // 横幅只在真实换手时播放，且不能浮现在已结束或暂停的对局上。
+  if (room.status !== 'playing') stopTurnBanner();
+  else if (turnStarted) playTurnBanner(room.game.turn);
 });
 socket.on('room:left', () => {
   stopOwnGoalAnimation();
   stopVerdictAnimation();
+  stopTurnBanner();
   state.room = null;
   clearSelection(false);
   $('room-view').hidden = true;
@@ -501,6 +513,38 @@ function renderTurnTimer() {
   $('turn-timer-value').textContent = String(value);
   timer.querySelector('small').textContent = paused ? '暂停' : '秒';
 }
+// 出棋提醒横幅：从右侧滑入、居中停留 2 秒、再向左滑出；滑动期间斜体，带果冻弹性。
+function playTurnBanner(side) {
+  const banner = $('turn-banner');
+  clearTimeout(turnBannerTimer);
+  $('turn-banner-text').textContent = `${side === 'red' ? '红' : '黑'}方出棋`;
+  banner.hidden = false;
+  // 连续两次同方向提醒时先移除类再强制回流，确保 CSS 动画从头重播。
+  banner.classList.remove('active');
+  void banner.offsetWidth;
+  banner.classList.add('active');
+  turnBannerTimer = setTimeout(stopTurnBanner, TURN_BANNER_MS);
+}
+// 清理横幅与计时器，避免退出房间、重开或换手后遗留旧提示。
+function stopTurnBanner() {
+  clearTimeout(turnBannerTimer);
+  turnBannerTimer = null;
+  $('turn-banner').hidden = true;
+  $('turn-banner').classList.remove('active');
+}
+// 超时跳回合只计数不判负，这里把双方剩余机会展示在计时器旁边。
+function renderTurnSkips() {
+  const room = state.room;
+  const chip = $('skip-chip');
+  if (!room || room.status !== 'playing' || !room.turnSkips) { chip.hidden = true; chip.textContent = ''; return; }
+  const max = room.turnMaxSkips || 3;
+  const parts = ['red', 'black'].filter((side) => room.turnSkips[side] > 0)
+    .map((side) => `${side === 'red' ? '红' : '黑'}方超时 ${room.turnSkips[side]}/${max}`);
+  chip.hidden = !parts.length;
+  chip.textContent = parts.join(' · ');
+  // 再超时一次就判负时转为警示色，给双方最后的提示。
+  chip.classList.toggle('warn', ['red', 'black'].some((side) => room.turnSkips[side] >= max - 1 && room.turnSkips[side] > 0));
+}
 function renderStatus() {
   const room = state.room;
   if (!room) return;
@@ -582,7 +626,7 @@ function renderRoom() {
   $('ply-count').textContent = `第 ${Math.floor(room.game.ply / 2) + 1} 回合`;
   $('spectator-count').textContent = `${room.spectators.length} 人观战`;
   $('spectator-count').title = room.spectators.map((p) => p.name).join('、');
-  renderPlayer('red'); renderPlayer('black'); renderCaptures(); renderBoard(); renderStatus(); renderTurnTimer(); renderControls(); renderChat(); renderHistory();
+  renderPlayer('red'); renderPlayer('black'); renderCaptures(); renderBoard(); renderStatus(); renderTurnTimer(); renderTurnSkips(); renderControls(); renderChat(); renderHistory();
 }
 $('ready-button').addEventListener('click', () => busy($('ready-button'), () => request('game:ready')));
 $('sit-button').addEventListener('click', () => busy($('sit-button'), () => request('room:sit')));

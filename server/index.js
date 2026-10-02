@@ -4,7 +4,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
-import { newGame, opposite, playMove, publicGame, modeLabel, GAME_MODES, SIDES } from '../public/xiangqi.js';
+import { newGame, opposite, playMove, skipTurn, publicGame, modeLabel, GAME_MODES, SIDES } from '../public/xiangqi.js';
 
 // 所有房间由单实例权威维护；服务重启会清空会话和棋局。
 // 默认监听 5500，服务器部署仍可通过 PORT 环境变量覆盖。
@@ -14,8 +14,10 @@ const MAX_ROOMS = 200;
 const MAX_SESSIONS = 2000;
 const MAX_SPECTATORS = 100;
 const RECONNECT_MS = 90_000;
-// 每方每回合有 90 秒思考时间；超时判负，任一方断线时暂停计时。
+// 每方每回合有 90 秒思考时间；任一方断线时暂停计时。
+// 出棋超时不再直接判负，而是跳过当前回合由对手出棋；同一方连续超时 3 次才判负。
 const TURN_MS = 90_000;
+const MAX_TURN_SKIPS = 3;
 const sessions = new Map();
 const rooms = new Map();
 // 只在服务端洗牌，使用密码学随机数而非客户端提供的随机身份。
@@ -129,6 +131,8 @@ function snapshot(room, session) {
     drawOffer: room.drawOffer, chat: room.chat,
     reconnectSeconds: RECONNECT_MS / 1000,
     turn: turnClock(room), turnSeconds: TURN_MS / 1000, serverNow: Date.now(),
+    // 超时跳回合的累计次数对双方公开，方便在判负前知道还剩几次机会。
+    turnSkips: room.turnSkips, turnMaxSkips: MAX_TURN_SKIPS,
   };
 }
 function broadcastRoom(room) {
@@ -248,7 +252,7 @@ io.on('connection', (socket) => {
     const room = { id: allocateRoomId(), name: cleanText(data.name, 32, `${session.name}的棋室`), mode,
       status: 'waiting', seats: { red: null, black: null }, ready: { red: false, black: false },
       spectators: new Set(), game: createGame(mode), drawOffer: null, chat: [],
-      turnStartedAt: null, turnPausedAt: null, turnPausedMs: 0,
+      turnStartedAt: null, turnPausedAt: null, turnPausedMs: 0, turnSkips: { red: 0, black: 0 },
       createdAt: Date.now(), updatedAt: Date.now() };
     room.seats[side] = session.token;
     rooms.set(room.id, room);
@@ -299,6 +303,7 @@ io.on('connection', (socket) => {
       room.game = createGame(room.mode);
       room.status = 'playing';
       resetTurnClock(room);
+      room.turnSkips = { red: 0, black: 0 };
       room.ready = { red: false, black: false };
       room.drawOffer = null;
       announce(room, `双方已准备，${modeLabel(room.mode)}开始 · 红方先行`);
@@ -316,6 +321,8 @@ io.on('connection', (socket) => {
     room.game = playMove(room.game,
       { x: data.from?.x, y: data.from?.y }, { x: data.to?.x, y: data.to?.y });
     room.drawOffer = null;
+    // 正常落子会清零本人的连续超时计数，对手的计数不受影响。
+    room.turnSkips[side] = 0;
     resetTurnClock(room);
     if (room.game.result) finish(room, room.game.result.winner, room.game.result.reason);
     broadcastRoom(room);
@@ -411,13 +418,24 @@ const cleanup = setInterval(() => {
 }, 2000);
 cleanup.unref();
 // 服务端每秒裁决超时，客户端倒计时仅展示、不参与判负。
+// 超时只跳过本回合并记一次数，同一方连续超时达到上限才判负。
 const turnTimeout = setInterval(() => {
   for (const room of rooms.values()) {
     if (room.status !== 'playing') continue;
     syncTurnPause(room);
     const clock = turnClock(room);
     if (clock.paused || clock.remainingMs > 0) continue;
-    finish(room, opposite(room.game.turn), '出棋超时');
+    const side = room.game.turn;
+    room.turnSkips[side] = (room.turnSkips[side] || 0) + 1;
+    const label = side === 'red' ? '红' : '黑';
+    if (room.turnSkips[side] >= MAX_TURN_SKIPS) {
+      finish(room, opposite(side), `连续 ${MAX_TURN_SKIPS} 次出棋超时`);
+    } else {
+      // 棋盘与棋谱原样保留，只把行棋权交给对手并重置对方的思考时间。
+      room.game = skipTurn(room.game);
+      announce(room, `${label}方出棋超时，本回合跳过 · 已连续超时 ${room.turnSkips[side]} 次`);
+      resetTurnClock(room);
+    }
     broadcastRoom(room);
     broadcastLobby();
   }

@@ -147,16 +147,6 @@ export function legalTargets(board, from, side) {
   }
   return moves;
 }
-function hasLegalMove(board, side) {
-  for (let y = 0; y < 10; y++) for (let x = 0; x < 9; x++) {
-    if (pieceSide(board[y][x]) !== side) continue;
-    for (let ty = 0; ty < 10; ty++) for (let tx = 0; tx < 9; tx++) {
-      if (legalMove(board, { x, y }, { x: tx, y: ty }, side)) return true;
-    }
-  }
-  return false;
-}
-
 // 重复局面包括暗棋标记、路线与私有身份，计数及键值从不发送给客户端。
 function positionKey(board, turn) {
   return `${turn}:${board.flat().map((p) => !p ? '.' : p.hidden
@@ -177,6 +167,26 @@ function notation(piece, from, to, captured) {
   const dest = from.y === to.y || ['n', 'b', 'a'].includes(piece.type)
     ? digits[to.x] : piece.side === 'red' ? '零一二三四五六七八九'[Math.abs(to.y - from.y)] : Math.abs(to.y - from.y);
   return `${pieceLabel(piece)}${digits[from.x]}${direction}${dest}${captured ? ` · 吃${pieceLabel(captured)}` : ''}`;
+}
+
+// 出棋超时跳过当前回合：棋盘原样保留，只把行棋权交给对手，并重新计算双方的将军状态。
+// 超时不属于行棋，因此不累加 quiet、不记录重复局面，让「连续 3 次超时判负」优先于和棋规则。
+export function skipTurn(game) {
+  if (game.result) throw new Error('这局棋已结束');
+  const turn = opposite(game.turn);
+  const checkedSides = SIDES.filter((side) => isInCheck(game.board, side));
+  return { ...game, turn, check: checkedSides.includes(turn), checkedSides };
+}
+
+// 是否还有任意一枚棋子能合法行动；困毙、将死以及「连续跳过整回合」共用这套走法枚举。
+export function hasLegalMove(board, side) {
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 9; x++) {
+    if (pieceSide(board[y][x]) !== side) continue;
+    for (let ty = 0; ty < 10; ty++) for (let tx = 0; tx < 9; tx++) {
+      if (legalMove(board, { x, y }, { x: tx, y: ty }, side)) return true;
+    }
+  }
+  return false;
 }
 
 // 校验只看移动前公开局面；翻明、移交归属和吃子分类随后执行，意外自将不回退。
