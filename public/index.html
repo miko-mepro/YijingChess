@@ -33,7 +33,8 @@
   <!-- 全局导航与网络状态在大厅和房间之间保持可见。 -->
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/" aria-label="弈境首页"><img class="brand-seal" src="/favicon.svg?v=chess-piece" alt="" width="43" height="43" draggable="false"><span>弈境<small>象棋</small></span></a>
+      <!-- 棋子图标自带“弈”字，品牌文字只保留“境”，避免重复出现同一个字。 -->
+      <a class="brand" href="/" aria-label="弈境首页"><img class="brand-seal" src="/favicon.svg?v=chess-piece" alt="弈" width="43" height="43" draggable="false"><span>境<small>象棋</small></span></a>
       <nav aria-label="主导航"><button id="nav-lobby" class="nav-link active" type="button">联机大厅</button><button id="help-button" class="nav-link" type="button">玩法与连接</button></nav>
       <div class="header-right"><span id="connection" class="connection"><i></i><span>连接中</span></span><button id="profile-button" class="profile-button" type="button"><svg class="icon"><use href="#i-user"/></svg><span id="profile-name">棋友</span></button></div>
     </div>
