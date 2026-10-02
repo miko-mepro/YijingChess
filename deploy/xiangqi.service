@@ -1,0 +1,25 @@
+# 将源码放在 /opt/xiangqi，并创建专用 xiangqi 系统用户后使用。
+[Unit]
+Description=弈境中国象棋联机服务
+After=network.target
+
+# Node.js 需安装在此路径；如使用其他路径请调整 ExecStart。
+[Service]
+Type=simple
+User=xiangqi
+Group=xiangqi
+WorkingDirectory=/opt/xiangqi
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=PORT=3000
+ExecStart=/usr/bin/node --env-file-if-exists=.env server/index.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+# 开机自动启动，不需要持久化目录或数据库。
+[Install]
+WantedBy=multi-user.target

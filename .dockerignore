@@ -1,0 +1,9 @@
+# 镜像仅需要应用源码和依赖清单，不带入本机环境与验证产物。
+node_modules
+.git
+.playwright-mcp
+.env
+.env.*
+*.log
+docs
+README.md

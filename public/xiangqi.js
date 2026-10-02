@@ -152,7 +152,7 @@ export function playMove(game, from, to) {
   let result = null;
   if (!hasLegalMove(board, turn)) result = { winner: game.turn, reason: check ? '将死' : '困毙' };
   else if (positions[key] >= 3) result = { winner: null, reason: '三次重复局面' };
-  else if (quiet >= 120) result = { winner: null, reason: '连续 120 步无吃子或兵卒移动' };
+  else if (quiet >= 120) result = { winner: null, reason: '连续 120 半回合无吃子或兵卒移动' };
   return { board, turn, ply: game.ply + 1, check, lastMove, result, quiet, positions,
     history: [...game.history, lastMove] };
 }

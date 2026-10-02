@@ -1,0 +1,21 @@
+# 单实例部署，房间保存在当前进程；不要直接增加 replicas。
+services:
+  xiangqi:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      # 公网或局域网直连使用 0.0.0.0；Nginx 同机部署可改为 127.0.0.1。
+      - "${BIND_ADDRESS:-0.0.0.0}:${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

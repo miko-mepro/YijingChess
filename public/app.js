@@ -103,6 +103,8 @@ socket.on('session:state', (session) => {
 });
 socket.on('lobby:state', (lobby) => { state.lobby = lobby; renderLobby(); });
 socket.on('room:state', (room) => {
+  // 恢复或成功进入房间后，邀请已消费；退出后的重连不应再次弹出旧邀请。
+  invitationHandled = true;
   const fresh = !state.room || state.room.id !== room.id || state.room.role !== room.role;
   const changed = fresh || state.room.game.ply !== room.game.ply || state.room.status !== room.status;
   state.room = room;

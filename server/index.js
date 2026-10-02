@@ -22,6 +22,8 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((x) =>
 // 默认只接受页面同源的连接；反向代理应保留原始 Host。
 const io = new Server(httpServer, {
   maxHttpBufferSize: 16_384,
+  // 额外允许的来源同时放行轮询 CORS；默认空列表保持页面同源访问。
+  cors: { origin: allowedOrigins, methods: ['GET', 'POST'] },
   allowRequest: (req, done) => {
     const origin = req.headers.origin;
     if (!origin) return done(null, true);

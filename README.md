@@ -1,0 +1,165 @@
+# 弈境 · 中国象棋
+
+一个免注册、浏览器即开即玩的中国象棋小游戏。纸木色棋盘与中文界面，支持电脑和手机。
+
+## 已提供的功能
+
+- **公网联机 / 局域网联机**：所有玩家访问同一服务地址即可连接，无需配置客户端服务器地址。
+- **实时大厅**：查看全部房间、等待中的房间及正在对弈的房间，搜索房间名或 6 位房间号。
+- **创建与加入**：创建时选择执红/执黑，支持房间号和邀请链接，双方准备后开局。
+- **房间观战**：实时同步棋盘、双方在线状态和走棋记录，旁观者可以交流，但不能操作对局。
+- **对局操作**：合法落点提示、翻转棋盘、键盘操作、认输、申请/拒绝和棋、双方准备再来一局。
+- **断线恢复**：原标签页刷新/重连后恢复身份及棋局，玩家座位保留 90 秒。
+- **服务端权威棋规**：走棋权限、回合、局面版本和棋规全部由服务器校验。
+- **部署配置**：Node.js、Docker Compose、Nginx 反向代理和 systemd 服务示例。
+
+## 快速开始
+
+需要 Node.js **22.9 或更高**，推荐 Node.js 24 LTS。
+
+```bash
+# 安装锁定依赖，然后启动网页与联机服务。
+npm ci
+npm start
+```
+
+打开 **http://localhost:3000**。终端同时输出本机可用的局域网地址。开发时使用 `npm run dev` 自动重启服务；重启会清空棋局。
+
+### 怎么玩
+
+1. 点击右上角昵称，设置自己的名字。
+2. 创建房间，分享「邀请棋友」链接；对方也可在大厅加入或输入房间号。
+3. 双方点击「准备开局」，红方先行。
+4. 点击自己的棋子，再点击绿色圆点；绿色虚线圈标记可吃的棋子。
+5. 其他玩家在大厅点击「观战」，即可同步旁观并聊天。
+
+棋盘也支持方向键移动选择位置、回车/空格选子和落子、Esc 取消选择。每个标签页通过 sessionStorage 保存自己的会话，昵称保存在 localStorage。测试双人联机时可使用不同浏览器、无痕窗口，或者独立打开的标签页；不要通过复制带有现有身份的标签页来占用多个座位。
+
+## 局域网联机
+
+在一台电脑运行服务，其他设备连接同一局域网，打开：
+
+```text
+http://主机局域网IP:3000
+例如：http://192.168.1.10:3000
+```
+
+- 默认监听 `0.0.0.0`，支持局域网连接；可用 `ipconfig`（Windows）或 `ip addr`（Linux）查看主机地址。
+- 主机防火墙需要放行 TCP 3000。Windows 在可信的专用网络中，可由管理员执行下面的命令。
+- 如果同一设备有多个网卡，请选择与其他玩家同网段的地址；不要选择虚拟机或代理网卡地址。
+- 分享局域网链接前，先用主机 IP 打开页面，再点击「邀请棋友」。`localhost` 只指向访问者自己的设备。
+- 路由器的访客网络、AP 隔离可能阻止设备互访。本项目不自动发现主机，也不提供 P2P 打洞。
+
+```powershell
+# 仅放行可信专用网络中的象棋服务，不开放所有端口。
+New-NetFirewallRule -DisplayName "弈境象棋" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private
+```
+
+## 部署到服务器
+
+### 方式一：Docker Compose
+
+服务器安装 Docker 与 Compose 插件后，在项目目录运行：
+
+```bash
+# 构建应用并常驻运行；进程退出或服务器重启后自动恢复服务。
+docker compose up -d --build
+
+# 查看运行状态、健康状态和日志。
+docker compose ps
+docker compose logs -f
+```
+
+默认映射服务器 TCP 3000，访问 `http://服务器IP:3000`。云服务器安全组和系统防火墙也要放行对应端口。
+
+可以自行创建项目根目录的 `.env` 文件修改主机端口，例如：
+
+```dotenv
+# Docker 主机端口；容器内部端口固定为 3000。
+PORT=3000
+# 直连需要 0.0.0.0；同机 Nginx 反代可设为 127.0.0.1。
+BIND_ADDRESS=0.0.0.0
+# 原生 Node.js 启动时的监听地址。
+HOST=0.0.0.0
+# 默认同源即可连接，通常无需配置额外来源。
+ALLOWED_ORIGINS=
+```
+
+修改后重新执行 `docker compose up -d`。镜像使用非 root 用户运行，并提供 `/healthz` 健康检查；Compose 限制为只读文件系统。没有数据库或持久化卷，服务重启后房间和棋局清空。
+
+### 方式二：原生 Node.js + systemd
+
+Linux 上可以把源码放到 `/opt/xiangqi`，在该目录执行 `npm ci --omit=dev`，创建专用 `xiangqi` 用户，然后使用 `deploy/xiangqi.service`：
+
+```bash
+# 先核对服务文件中的用户、工作目录和 Node.js 绝对路径。
+sudo cp deploy/xiangqi.service /etc/systemd/system/xiangqi.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now xiangqi
+sudo journalctl -u xiangqi -f
+```
+
+服务文件默认使用 `/usr/bin/node`，请用 `command -v node` 检查实际路径。Node.js 的 `.env` 可选，`npm start` 和服务文件都会读取它；未创建时使用默认值。不要使用 development watch 模式运行长期对局。
+
+### 公网推荐：Nginx + HTTPS
+
+1. 将域名解析到服务器。
+2. 配置 `deploy/nginx.conf`，替换 `chess.example.com` 为真实域名；它应处于 Nginx 的 `http` 上下文，例如 `/etc/nginx/conf.d/`。
+3. 如果使用不同的 Node.js 端口，修改 `proxy_pass`。
+4. 执行 `nginx -t` 后重载 Nginx，配置自己的 TLS 证书，让玩家通过 **HTTPS** 访问。
+5. 对外放行 80/443；同机反代时将应用端口绑定到 `127.0.0.1`，避免直接暴露 Node.js 端口。
+
+配置已经转发 WebSocket 的 `Upgrade` / `Connection` 请求头，支持 Socket.IO 的轮询回退。默认要求连接同源，代理必须保留客户端原始 `Host`。只有确实需要额外来源时，才设置 `ALLOWED_ORIGINS=https://来源一,https://来源二`。
+
+> 不应长期在公网使用 HTTP：昵称和会话令牌都应通过 HTTPS 传输。公网部署由你自己的服务器承载，本项目不附带公共服务器或域名。
+
+## 规则与使用边界
+
+- 实现马腿、象眼、象不过河、九宫限制、炮隔子吃子、兵卒过河、不能送将和将帅照面。
+- 将死获胜；无合法着法但未被将军的困毙也判负。
+- 同一局面（含行棋方）出现三次，或连续 120 半回合没有吃子及兵卒移动，自动和棋。
+- **休闲规则，不等同于竞赛裁判规则**：没有长将/长捉责任判定、计时、悔棋、AI 或积分排名。
+- 意外断线时暂停落子，保留座位 90 秒，超时判负；双方同时离线超时判和。对局中主动退出视为认输。
+- 服务端 2 秒一次检查超时，实际清理可能延迟最多约 2 秒。离线旁观者同样在超时后释放。
+- 房间开放旁观；没有账号体系、密码房间和永久棋谱。会话令牌只发送给本人，不应分享。
+- **单实例内存存储**：重启清空会话与房间，不支持直接多副本部署。横向扩容需要共享房间状态、会话存储、Socket.IO 适配器和房间调度，并非简单增加 replicas。
+- 限制最多 200 个房间、每房间 100 个旁观身份、2000 个会话；离线且无房间的会话在一小时后清理。
+- 每个客户端采用容量 30、每秒补充 10 的操作令牌桶；昵称最多 16 字、房间名最多 32 字、聊天最多 200 字，最近 100 条消息保存在内存中。
+- 公网高负载或对抗场景还需要在入口代理配置连接限流、监控及防护；当前版本适合朋友对弈和小规模部署。
+
+## 项目结构
+
+```text
+public/
+  index.html          中文大厅、房间和弹窗
+  styles.css          响应式纸木风格界面
+  app.js              Socket.IO 客户端与互动棋盘
+  xiangqi.js          浏览器/服务器共享棋规
+  favicon.svg         本地矢量图标
+server/
+  index.js            会话、大厅、房间、观战与权威棋局
+部署文件：
+  Dockerfile
+  compose.yaml
+  deploy/nginx.conf
+  deploy/xiangqi.service
+docs/
+  设计方案.md         架构、功能及规则边界
+```
+
+### 运行检查
+
+```bash
+# 只检查 JavaScript 语法，不创建测试文件。
+npm run check
+# 查看当前生产依赖的已知安全问题。
+npm audit --omit=dev
+# 检查服务是否启动。
+curl http://localhost:3000/healthz
+```
+
+浏览器联机验证可分别打开三个独立身份：红方、黑方和旁观者，检查准备开局、走棋同步、聊天、刷新恢复、和棋、认输与重开。Docker 构建需要在安装了 Docker 的机器上验证。
+
+## 技术参考
+
+规则和 UI 为独立实现，没有复制第三方棋规库代码。架构参考：[xiangqi.js](https://github.com/lengyanyu258/xiangqi.js/)、[Socket.IO 服务端 API](https://socket.io/docs/v4/server-api/) 与[断线恢复说明](https://socket.io/docs/v4/connection-state-recovery)。
