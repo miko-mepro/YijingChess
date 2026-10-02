@@ -10,9 +10,9 @@ COPY public ./public
 
 # 非 root 身份运行；房间均在内存中，无需写入容器文件系统。
 USER node
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
-EXPOSE 3000
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=5500
+EXPOSE 5500
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:5500/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 # 直接启动 Node.js，避免只读容器中 npm 创建缓存日志。
 CMD ["node", "server/index.js"]

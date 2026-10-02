@@ -11,7 +11,7 @@ Group=xiangqi
 WorkingDirectory=/opt/xiangqi
 Environment=NODE_ENV=production
 Environment=HOST=0.0.0.0
-Environment=PORT=3000
+Environment=PORT=5500
 ExecStart=/usr/bin/node --env-file-if-exists=.env server/index.js
 Restart=on-failure
 RestartSec=5

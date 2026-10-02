@@ -25,7 +25,7 @@ npm ci
 npm start
 ```
 
-打开 **http://localhost:3000**。终端同时输出本机可用的局域网地址。开发时使用 `npm run dev` 自动重启服务；重启会清空棋局。
+打开 **http://localhost:5500**。终端同时输出本机可用的局域网地址。开发时使用 `npm run dev` 自动重启服务；重启会清空棋局。
 
 ### 怎么玩
 
@@ -55,19 +55,19 @@ npm start
 在一台电脑运行服务，其他设备连接同一局域网，打开：
 
 ```text
-http://主机局域网IP:3000
-例如：http://192.168.1.10:3000
+http://主机局域网IP:5500
+例如：http://192.168.1.10:5500
 ```
 
 - 默认监听 `0.0.0.0`，支持局域网连接；可用 `ipconfig`（Windows）或 `ip addr`（Linux）查看主机地址。
-- 主机防火墙需要放行 TCP 3000。Windows 在可信的专用网络中，可由管理员执行下面的命令。
+- 主机防火墙需要放行 TCP 5500。Windows 在可信的专用网络中，可由管理员执行下面的命令。
 - 如果同一设备有多个网卡，请选择与其他玩家同网段的地址；不要选择虚拟机或代理网卡地址。
 - 分享局域网链接前，先用主机 IP 打开页面，再点击「邀请棋友」。`localhost` 只指向访问者自己的设备。
 - 路由器的访客网络、AP 隔离可能阻止设备互访。本项目不自动发现主机，也不提供 P2P 打洞。
 
 ```powershell
 # 仅放行可信专用网络中的象棋服务，不开放所有端口。
-New-NetFirewallRule -DisplayName "弈境象棋" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private
+New-NetFirewallRule -DisplayName "弈境象棋" -Direction Inbound -Protocol TCP -LocalPort 5500 -Action Allow -Profile Private
 ```
 
 ## 部署到服务器
@@ -85,13 +85,13 @@ docker compose ps
 docker compose logs -f
 ```
 
-默认映射服务器 TCP 3000，访问 `http://服务器IP:3000`。云服务器安全组和系统防火墙也要放行对应端口。
+默认映射服务器 TCP 5500，访问 `http://服务器IP:5500`。云服务器安全组和系统防火墙也要放行对应端口。
 
 可以自行创建项目根目录的 `.env` 文件修改主机端口，例如：
 
 ```dotenv
-# Docker 主机端口；容器内部端口固定为 3000。
-PORT=3000
+# Docker 主机端口；容器内部端口固定为 5500。
+PORT=5500
 # 直连需要 0.0.0.0；同机 Nginx 反代可设为 127.0.0.1。
 BIND_ADDRESS=0.0.0.0
 # 原生 Node.js 启动时的监听地址。
@@ -170,7 +170,7 @@ npm run check
 # 查看当前生产依赖的已知安全问题。
 npm audit --omit=dev
 # 检查服务是否启动。
-curl http://localhost:3000/healthz
+curl http://localhost:5500/healthz
 ```
 
 浏览器联机验证可分别打开三个独立身份：红方、黑方和旁观者，检查准备开局、走棋同步、聊天、刷新恢复、和棋、认输与重开。Docker 构建需要在安装了 Docker 的机器上验证。

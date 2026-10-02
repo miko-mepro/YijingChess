@@ -7,7 +7,8 @@ import { Server } from 'socket.io';
 import { newGame, opposite, playMove, publicGame, modeLabel, GAME_MODES, SIDES } from '../public/xiangqi.js';
 
 // 所有房间由单实例权威维护；服务重启会清空会话和棋局。
-const PORT = Number(process.env.PORT || 3000);
+// 默认监听 5500，服务器部署仍可通过 PORT 环境变量覆盖。
+const PORT = Number(process.env.PORT || 5500);
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_ROOMS = 200;
 const MAX_SESSIONS = 2000;

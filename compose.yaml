@@ -6,11 +6,11 @@ services:
     init: true
     ports:
       # 公网或局域网直连使用 0.0.0.0；Nginx 同机部署可改为 127.0.0.1。
-      - "${BIND_ADDRESS:-0.0.0.0}:${PORT:-3000}:3000"
+      - "${BIND_ADDRESS:-0.0.0.0}:${PORT:-5500}:5500"
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
-      PORT: 3000
+      PORT: 5500
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
     read_only: true
     tmpfs:
