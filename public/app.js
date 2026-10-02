@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 const icon = (name) => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const state = { room: null, lobby: { online: 0, rooms: [] }, filter: 'all', query: '',
   selected: null, targets: [], flipped: false, cursor: { x: 0, y: 9 }, keyboard: false,
-  moving: false, session: null, online: false, chatKey: '', historyKey: '', captureSide: 'red' };
+  moving: false, session: null, online: false, chatKey: '', historyKey: '', captureSide: 'red', snapshotAt: 0 };
 const invitation = new URL(location.href).searchParams.get('room');
 let invitationHandled = false;
 // 动画只响应新的实时落子；刷新、观战加入和重开不会回放历史乌龙。
@@ -122,6 +122,7 @@ socket.on('room:state', (room) => {
   const ownGoal = !fresh && room.game.ply > state.room.game.ply && room.game.lastMove?.ownGoal;
   const justEnded = !fresh && state.room.status !== 'finished' && room.status === 'finished' && room.game.result?.winner;
   state.room = room;
+  state.snapshotAt = Date.now();
   if (reset) { stopOwnGoalAnimation(); stopVerdictAnimation(); }
   if (fresh) {
     closeDialogs();
@@ -476,6 +477,30 @@ function renderPlayer(side) {
   el.classList.toggle('current-turn', active);
   el.innerHTML = `<span class="player-avatar">${side === 'red' ? '帅' : '将'}</span><div class="player-meta"><strong>${player ? escapeHtml(player.name) : '等待棋友入座'}${isMe ? ' <span style="color:#9ca88c;font-size:10px">(你)</span>' : ''}</strong><small>${label}</small></div><span class="player-tag${player && !player.online ? ' offline' : ''}">${tag}</span>`;
 }
+// 依据服务端快照的剩余毫秒数本地递减；断线暂停时显示冻结的剩余秒数。
+function turnSecondsLeft() {
+  const room = state.room;
+  if (!room || room.status !== 'playing' || !room.turn) return null;
+  const elapsed = room.turn.paused ? 0 : Date.now() - state.snapshotAt;
+  return Math.max(0, (room.turn.remainingMs - elapsed) / 1000);
+}
+// 棋盘顶部展示当前 90 秒时钟；30 秒内数字脉动变红、沙漏摇晃。
+function renderTurnTimer() {
+  const room = state.room;
+  const timer = $('turn-timer');
+  if (!room || room.status !== 'playing' || !room.turn) {
+    timer.hidden = true;
+    return;
+  }
+  const paused = Boolean(room.turn.paused);
+  const seconds = turnSecondsLeft();
+  const value = Math.max(0, Math.ceil(seconds));
+  timer.hidden = false;
+  timer.classList.toggle('warning', !paused && value <= 30);
+  timer.classList.toggle('paused', paused);
+  $('turn-timer-value').textContent = String(value);
+  timer.querySelector('small').textContent = paused ? '暂停' : '秒';
+}
 function renderStatus() {
   const room = state.room;
   if (!room) return;
@@ -494,10 +519,12 @@ function renderStatus() {
     hint = '对局暂时暂停，超时未恢复将判负';
   } else {
     const checked = room.game.checkedSides || (room.game.check ? [room.game.turn] : []);
-    status = `${room.game.turn === 'red' ? '红' : '黑'}方行棋${checked.length ? ` · ${checked.map((side) => side === 'red' ? '红方' : '黑方').join('、')}被将军！` : ''}`;
+    status = `${room.game.turn === 'red' ? '红' : '黑'}方出棋${checked.length ? ` · ${checked.map((side) => side === 'red' ? '红方' : '黑方').join('、')}被将军！` : ''}`;
     hint = room.role === 'spectator' ? '你正在观战 · 棋局实时同步' : room.role === room.game.turn ? '轮到你了，选择棋子落子' : '对手正在思考，稍候片刻';
   }
   $('game-status').textContent = status;
+  $('game-status').classList.toggle('red-turn', room.status === 'playing' && room.game.turn === 'red');
+  $('game-status').classList.toggle('black-turn', room.status === 'playing' && room.game.turn === 'black');
   if (!state.selected) $('board-hint').textContent = hint;
 }
 function renderControls() {
@@ -555,7 +582,7 @@ function renderRoom() {
   $('ply-count').textContent = `第 ${Math.floor(room.game.ply / 2) + 1} 回合`;
   $('spectator-count').textContent = `${room.spectators.length} 人观战`;
   $('spectator-count').title = room.spectators.map((p) => p.name).join('、');
-  renderPlayer('red'); renderPlayer('black'); renderCaptures(); renderBoard(); renderStatus(); renderControls(); renderChat(); renderHistory();
+  renderPlayer('red'); renderPlayer('black'); renderCaptures(); renderBoard(); renderStatus(); renderTurnTimer(); renderControls(); renderChat(); renderHistory();
 }
 $('ready-button').addEventListener('click', () => busy($('ready-button'), () => request('game:ready')));
 $('sit-button').addEventListener('click', () => busy($('sit-button'), () => request('room:sit')));
@@ -614,5 +641,8 @@ $('copy-share').addEventListener('click', async () => {
 });
 // 点击品牌不重新加载页面，避免对局中误离开；断线倒计时每秒更新。
 document.querySelector('.brand').addEventListener('click', (event) => { event.preventDefault(); leave(); });
-setInterval(() => { if (state.room?.status === 'playing') renderStatus(); }, 1000);
+setInterval(() => {
+  renderTurnTimer();
+  if (state.room?.status === 'playing') renderStatus();
+}, 1000);
 renderLobby();
