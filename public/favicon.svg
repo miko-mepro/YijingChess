@@ -1,2 +1,18 @@
-<!-- 自带矢量标识，离线局域网环境无需请求外部图床。 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#244c40"/><text x="32" y="44" text-anchor="middle" font-size="38" font-family="serif" fill="#fff8e9">弈</text></svg>
+<!-- 本地矢量象棋标识：木色棋面、双层圆环与朱红“弈”字，离线也能完整显示。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="piece-title">
+  <title id="piece-title">弈字象棋棋子</title>
+  <defs>
+    <!-- 轻微木色渐变保留棋面质感，不依赖图片或外部字体。 -->
+    <radialGradient id="piece-face" cx="34%" cy="26%" r="80%">
+      <stop offset="0" stop-color="#fff9e9"/>
+      <stop offset="0.72" stop-color="#faf1de"/>
+      <stop offset="1" stop-color="#e7d2a6"/>
+    </radialGradient>
+  </defs>
+  <!-- 下移的底座表现棋子厚度，双层圆环沿用棋盘上的象棋造型。 -->
+  <circle cx="32" cy="34" r="28.5" fill="#b69868" stroke="#92754c" stroke-width="1.5"/>
+  <circle cx="32" cy="30" r="28.5" fill="url(#piece-face)" stroke="#bfa16e" stroke-width="1.5"/>
+  <circle cx="32" cy="30" r="24.5" fill="none" stroke="#c7b286" stroke-width="1.3"/>
+  <!-- “弈”字置于棋面中央，使用系统中文字体并保持小尺寸下的对比度。 -->
+  <text x="32" y="30" text-anchor="middle" dominant-baseline="central" font-size="38" font-weight="700" font-family="STSong, SimSun, 'Songti SC', serif" fill="#ad4635">弈</text>
+</svg>

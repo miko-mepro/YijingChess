@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#244c40">
-  <meta name="description" content="弈境中国象棋：与朋友在线对弈，支持公网与局域网联机，实时大厅和自由观战。">
-  <title>弈境 · 中国象棋</title>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="description" content="弈境象棋：与朋友在线对弈，支持公网与局域网联机，实时大厅和自由观战。">
+  <title>弈境 · 象棋</title>
+  <!-- 标签页与页头共用本地棋子图标；更换资源地址以更新浏览器缓存。 -->
+  <link rel="icon" href="/favicon.svg?v=chess-piece" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <script src="/socket.io/socket.io.js" defer></script>
   <script type="module" src="/app.js"></script>
@@ -32,7 +33,7 @@
   <!-- 全局导航与网络状态在大厅和房间之间保持可见。 -->
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/" aria-label="弈境首页"><span class="brand-seal">弈</span><span>弈境<small>中国象棋</small></span></a>
+      <a class="brand" href="/" aria-label="弈境首页"><img class="brand-seal" src="/favicon.svg?v=chess-piece" alt="" width="43" height="43" draggable="false"><span>弈境<small>象棋</small></span></a>
       <nav aria-label="主导航"><button id="nav-lobby" class="nav-link active" type="button">联机大厅</button><button id="help-button" class="nav-link" type="button">玩法与连接</button></nav>
       <div class="header-right"><span id="connection" class="connection"><i></i><span>连接中</span></span><button id="profile-button" class="profile-button" type="button"><svg class="icon"><use href="#i-user"/></svg><span id="profile-name">棋友</span></button></div>
     </div>
@@ -69,13 +70,13 @@
       <div class="game-layout">
         <section class="board-panel"><div class="board-status"><span id="game-status" role="status">等待棋友入座</span><button id="flip-board" class="text-button" type="button"><svg class="icon"><use href="#i-refresh"/></svg>翻转棋盘</button></div><!-- 暗棋吃子按当前记录视角分类，左右位置不随棋盘翻转而交换。 -->
         <div id="capture-tools" class="capture-tools" hidden><span>吃子记录</span><div role="group" aria-label="选择吃子记录阵营"><button data-capture-side="red" type="button">红方记录</button><button data-capture-side="black" type="button">黑方记录</button></div></div>
-        <div id="board-stage" class="board-stage"><section id="won-panel" class="capture-panel" aria-label="赢棋区" hidden><h3>赢棋 <span id="won-count">0</span></h3><p>吃掉的敌棋</p><div id="won-pieces" class="capture-pieces"></div></section><div class="board-wrap"><svg id="game-board" viewBox="0 0 540 600" tabindex="0" role="group" aria-label="中国象棋棋盘，方向键选择位置，回车选择棋子或落子"></svg><div id="king-reaction" class="king-reaction" aria-hidden="true" hidden>🤣🤣</div><!-- 观战者的胜负提示分别附着在棋盘两方半场，玩家不生成此处文案。 --><div id="board-verdicts" class="board-verdicts" role="status" aria-live="polite" aria-atomic="true" hidden></div></div><section id="own-goal-panel" class="capture-panel own-goal-panel" aria-label="乌龙区" hidden><h3>乌龙 <span id="own-goal-count">0</span></h3><p>误吃的友棋</p><div id="own-goal-pieces" class="capture-pieces"></div></section></div><div class="board-footer"><span id="board-hint">双方准备后即可开始</span><span>楚河 · 汉界</span></div></section>
+        <div id="board-stage" class="board-stage"><section id="won-panel" class="capture-panel" aria-label="赢棋区" hidden><h3>赢棋 <span id="won-count">0</span></h3><p>吃掉的敌棋</p><div id="won-pieces" class="capture-pieces"></div></section><div class="board-wrap"><svg id="game-board" viewBox="0 0 540 600" tabindex="0" role="group" aria-label="象棋棋盘，方向键选择位置，回车选择棋子或落子"></svg><div id="king-reaction" class="king-reaction" aria-hidden="true" hidden>🤣🤣</div><!-- 观战者的胜负提示分别附着在棋盘两方半场，玩家不生成此处文案。 --><div id="board-verdicts" class="board-verdicts" role="status" aria-live="polite" aria-atomic="true" hidden></div></div><section id="own-goal-panel" class="capture-panel own-goal-panel" aria-label="乌龙区" hidden><h3>乌龙 <span id="own-goal-count">0</span></h3><p>误吃的友棋</p><div id="own-goal-pieces" class="capture-pieces"></div></section></div><div class="board-footer"><span id="board-hint">双方准备后即可开始</span><span>楚河 · 汉界</span></div></section>
         <aside class="room-sidebar"><section class="players-panel"><div class="section-title"><h2>对局席位</h2><span id="ply-count">第 0 回合</span></div><div id="red-player" class="player-card red-player"></div><div class="versus-line"><span></span>VS<span></span></div><div id="black-player" class="player-card black-player"></div><div id="game-result" class="result-box" hidden></div><div id="draw-notice" class="draw-notice" hidden></div><div class="game-actions"><button id="ready-button" class="button primary" type="button">准备开局</button><button id="sit-button" class="button primary" type="button" hidden>入座对弈</button><button id="draw-button" class="button secondary" type="button" hidden>申请和棋</button><button id="resign-button" class="button danger-text" type="button" hidden>认输</button></div><div class="spectator-info"><svg class="icon"><use href="#i-eye"/></svg><span id="spectator-count">0 人观战</span></div></section>
         <section class="activity-panel"><div class="activity-tabs" role="group" aria-label="房间信息"><button id="chat-tab" class="activity-tab selected" type="button"><svg class="icon"><use href="#i-chat"/></svg>房间交流</button><button id="moves-tab" class="activity-tab" type="button">走棋记录 <span id="moves-count">0</span></button></div><div id="chat-area"><div id="chat-messages" class="chat-messages" role="log" aria-label="房间聊天"></div><form id="chat-form" class="chat-form"><input id="chat-input" placeholder="聊聊这局棋…" aria-label="聊天消息" maxlength="200" autocomplete="off"><button class="icon-button" type="submit" aria-label="发送消息"><svg class="icon"><use href="#i-arrow"/></svg></button></form></div><div id="moves-area" hidden><div id="move-list" class="move-list"></div></div></section></aside>
       </div>
     </section>
   </main>
-  <footer class="site-footer"><span>弈境 <span class="footer-dot">·</span> 让每一次相逢，都有一局好棋</span><span>中国象棋 / CHINESE CHESS</span></footer>
+  <footer class="site-footer"><span>弈境 <span class="footer-dot">·</span> 让每一次相逢，都有一局好棋</span><span>象棋 / CHINESE CHESS</span></footer>
   <noscript><p class="noscript">请启用 JavaScript 后游玩，联机棋局需要实时连接。</p></noscript>
 
   <!-- 原生 dialog 提供焦点管理和键盘 Esc 关闭，不使用阻塞式弹窗。 -->
