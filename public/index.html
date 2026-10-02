@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#244c40">
+  <meta name="description" content="弈境中国象棋：与朋友在线对弈，支持公网与局域网联机，实时大厅和自由观战。">
+  <title>弈境 · 中国象棋</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/socket.io/socket.io.js" defer></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <!-- 内置图标不依赖第三方资源，局域网断网环境也可完整显示。 -->
+  <svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></symbol>
+    <symbol id="i-network" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="6" rx="1"/><rect x="2" y="16" width="7" height="5" rx="1"/><rect x="15" y="16" width="7" height="5" rx="1"/><path d="M12 9v4M5.5 16v-3h13v3"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 13-3l2 2M4 17l2 2a8 8 0 0 0 13-3"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 14 4-4m-7 5-2 2a4 4 0 0 0 6 6l4-4a4 4 0 0 0 0-6M9 11a4 4 0 0 1 0-6l4-4a4 4 0 0 1 6 6l-2 2" transform="translate(1 0) scale(.9)"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m10 5-7 7 7 7M3 12h18"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11a9 9 0 0 1-9 9 10 10 0 0 1-4-.8L3 21l1.8-5A9 9 0 1 1 21 11Z"/><path d="M8 11h8"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  </svg>
+
+  <!-- 全局导航与网络状态在大厅和房间之间保持可见。 -->
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="弈境首页"><span class="brand-seal">弈</span><span>弈境<small>中国象棋</small></span></a>
+      <nav aria-label="主导航"><button id="nav-lobby" class="nav-link active" type="button">联机大厅</button><button id="help-button" class="nav-link" type="button">玩法与连接</button></nav>
+      <div class="header-right"><span id="connection" class="connection"><i></i><span>连接中</span></span><button id="profile-button" class="profile-button" type="button"><svg class="icon"><use href="#i-user"/></svg><span id="profile-name">棋友</span></button></div>
+    </div>
+  </header>
+  <div id="offline-banner" class="offline-banner" role="status" hidden>连接已断开，正在重连。请勿关闭标签页，座位将保留 90 秒。</div>
+
+  <main class="page-shell">
+    <section id="lobby-view" aria-label="联机大厅">
+      <div class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="tiny-line"></span> 一方棋盘，四海棋友</div>
+          <h1>方寸之间，<br>自有<span>乾坤。</span></h1>
+          <p>隔山海，也能坐对面。邀好友落子，或入席观战，<br class="desktop-break">在楚河汉界间，遇见你的下一位对手。</p>
+          <div class="hero-actions"><button id="hero-create" class="button primary" type="button"><svg class="icon"><use href="#i-plus"/></svg>创建房间</button><button id="quick-join" class="button subtle" type="button">房间号加入<svg class="icon"><use href="#i-arrow"/></svg></button></div>
+          <div class="hero-note"><span class="live-dot"></span>无需注册 · 即开即玩 · 支持电脑与手机</div>
+        </div>
+        <div class="hero-art" aria-hidden="true"><div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div><div class="preview-board"><svg id="preview-board" viewBox="0 0 540 600"></svg></div><div class="art-caption"><span class="caption-seal">棋</span><div>棋逢对手，何其有幸<small>LET'S MAKE A MOVE</small></div></div></div>
+      </div>
+
+      <!-- 房间列表只渲染服务端真实数据，不预置虚构玩家或房间。 -->
+      <section class="lobby-panel">
+        <div class="panel-heading"><div><div class="section-eyebrow">MEET YOUR NEXT OPPONENT</div><h2>联机大厅 <span id="room-count" class="count-pill">0</span></h2></div><div class="live-summary"><span class="live-dot"></span><strong id="online-count">0</strong>位棋友在线</div></div>
+        <div class="lobby-toolbar"><div class="filter-tabs" role="group" aria-label="房间筛选"><button class="filter-tab selected" data-filter="all" type="button">全部房间</button><button class="filter-tab" data-filter="waiting" type="button">等待开局</button><button class="filter-tab" data-filter="playing" type="button">正在对弈</button></div><div class="toolbar-right"><label class="search-box"><svg class="icon"><use href="#i-search"/></svg><input id="room-search" placeholder="搜索房间名 / 房间号" maxlength="32" aria-label="搜索房间"></label><button id="refresh-lobby" class="icon-button" type="button" aria-label="刷新大厅"><svg class="icon"><use href="#i-refresh"/></svg></button><button id="list-create" class="button primary small" type="button"><svg class="icon"><use href="#i-plus"/></svg>创建房间</button></div></div>
+        <div class="room-table-heading" aria-hidden="true"><span>房间</span><span>对局玩家</span><span>状态</span><span>观战</span><span>入席</span></div>
+        <div id="room-list" class="room-list" aria-live="polite"></div>
+        <div class="lobby-bottom"><span>以棋会友，落子无悔。</span><span>大厅实时更新 <span class="live-dot"></span></span></div>
+      </section>
+      <div class="feature-grid"><article class="feature-card"><span class="feature-icon"><svg class="icon"><use href="#i-globe"/></svg></span><div><h3>远隔千里，也能对弈</h3><p>通过服务器地址，与各地棋友实时联机。</p></div></article><article class="feature-card"><span class="feature-icon"><svg class="icon"><use href="#i-network"/></svg></span><div><h3>同一网络，即刻相逢</h3><p>局域网内，用主机 IP 就能轻松加入。</p></div></article><article class="feature-card"><span class="feature-icon"><svg class="icon"><use href="#i-eye"/></svg></span><div><h3>入席观战，以棋会友</h3><p>实时旁观精彩棋局，也可以交流心得。</p></div></article></div>
+    </section>
+
+    <!-- 对局区：棋盘、双方状态、棋谱和聊天均来自同一个房间快照。 -->
+    <section id="room-view" hidden aria-label="象棋房间">
+      <div class="room-topbar"><div class="room-title-group"><button id="leave-room" class="icon-button" type="button" aria-label="退出房间返回大厅"><svg class="icon"><use href="#i-back"/></svg></button><div><h1 id="room-title">棋友的棋室</h1><div class="room-subtitle">房间号 <strong id="room-id"></strong><span id="role-label" class="role-pill"></span></div></div></div><button id="share-room" class="button secondary small" type="button"><svg class="icon"><use href="#i-link"/></svg>邀请棋友</button></div>
+      <div class="game-layout">
+        <section class="board-panel"><div class="board-status"><span id="game-status" role="status">等待棋友入座</span><button id="flip-board" class="text-button" type="button"><svg class="icon"><use href="#i-refresh"/></svg>翻转棋盘</button></div><div class="board-wrap"><svg id="game-board" viewBox="0 0 540 600" tabindex="0" role="group" aria-label="中国象棋棋盘，方向键选择位置，回车选择棋子或落子"></svg></div><div class="board-footer"><span id="board-hint">双方准备后即可开始</span><span>楚河 · 汉界</span></div></section>
+        <aside class="room-sidebar"><section class="players-panel"><div class="section-title"><h2>对局席位</h2><span id="ply-count">第 0 回合</span></div><div id="red-player" class="player-card red-player"></div><div class="versus-line"><span></span>VS<span></span></div><div id="black-player" class="player-card black-player"></div><div id="game-result" class="result-box" hidden></div><div id="draw-notice" class="draw-notice" hidden></div><div class="game-actions"><button id="ready-button" class="button primary" type="button">准备开局</button><button id="sit-button" class="button primary" type="button" hidden>入座对弈</button><button id="draw-button" class="button secondary" type="button" hidden>申请和棋</button><button id="resign-button" class="button danger-text" type="button" hidden>认输</button></div><div class="spectator-info"><svg class="icon"><use href="#i-eye"/></svg><span id="spectator-count">0 人观战</span></div></section>
+        <section class="activity-panel"><div class="activity-tabs" role="group" aria-label="房间信息"><button id="chat-tab" class="activity-tab selected" type="button"><svg class="icon"><use href="#i-chat"/></svg>房间交流</button><button id="moves-tab" class="activity-tab" type="button">走棋记录 <span id="moves-count">0</span></button></div><div id="chat-area"><div id="chat-messages" class="chat-messages" role="log" aria-label="房间聊天"></div><form id="chat-form" class="chat-form"><input id="chat-input" placeholder="聊聊这局棋…" aria-label="聊天消息" maxlength="200" autocomplete="off"><button class="icon-button" type="submit" aria-label="发送消息"><svg class="icon"><use href="#i-arrow"/></svg></button></form></div><div id="moves-area" hidden><div id="move-list" class="move-list"></div></div></section></aside>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer"><span>弈境 <span class="footer-dot">·</span> 让每一次相逢，都有一局好棋</span><span>中国象棋 / CHINESE CHESS</span></footer>
+  <noscript><p class="noscript">请启用 JavaScript 后游玩，联机棋局需要实时连接。</p></noscript>
+
+  <!-- 原生 dialog 提供焦点管理和键盘 Esc 关闭，不使用阻塞式弹窗。 -->
+  <dialog id="create-dialog"><form id="create-form" class="dialog-form"><div class="dialog-heading"><div><div class="section-eyebrow">A NEW GAME AWAITS</div><h2>开一间棋室</h2></div><button class="icon-button" data-close type="button" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button></div><p class="dialog-description">摆好棋盘，等一位有缘的对手。</p><label class="field-label" for="create-name">房间名称</label><input id="create-name" class="field-input" maxlength="32" placeholder="例如：茶余饭后一局棋" required><label class="field-label">选择执棋方</label><div class="side-options"><label><input type="radio" name="side" value="red" checked><span><b class="choice-piece red-piece">帅</b><strong>执红先行</strong><small>红方先手</small></span></label><label><input type="radio" name="side" value="black"><span><b class="choice-piece black-piece">将</b><strong>执黑后行</strong><small>黑方后手</small></span></label></div><div class="dialog-tip"><svg class="icon"><use href="#i-eye"/></svg>所有房间均开放观战，分享链接即可邀请好友。</div><button class="button primary full-width" type="submit">创建房间<svg class="icon"><use href="#i-arrow"/></svg></button></form></dialog>
+  <dialog id="profile-dialog"><form id="profile-form" class="dialog-form"><div class="dialog-heading"><h2>怎么称呼你？</h2><button class="icon-button" data-close type="button" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button></div><p class="dialog-description">好棋友，值得一个好名字。无需注册。</p><label class="field-label" for="nickname-input">你的昵称</label><input id="nickname-input" class="field-input" maxlength="16" required placeholder="最多 16 个字"><button class="button primary full-width" type="submit">保存昵称</button></form></dialog>
+  <dialog id="join-dialog"><form id="join-form" class="dialog-form"><div class="dialog-heading"><h2>赴一场棋约</h2><button class="icon-button" data-close type="button" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button></div><p class="dialog-description">输入好友的 6 位房间号，入座或旁观。</p><label class="field-label" for="join-id">房间号</label><input id="join-id" class="field-input room-code-input" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" required placeholder="000000"><div class="join-actions"><button class="button primary" type="submit" name="mode" value="player">入座对弈</button><button class="button secondary" type="submit" name="mode" value="spectator"><svg class="icon"><use href="#i-eye"/></svg>观战</button></div></form></dialog>
+  <dialog id="help-dialog"><div class="dialog-form help-content"><div class="dialog-heading"><h2>落子前的小提示</h2><button class="icon-button" data-close type="button" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button></div><h3>开始对弈</h3><p>设置昵称 → 创建或加入房间 → 双方点击准备。红方先行，点击自己的棋子，再点击标出的合法落点。支持方向键与回车操作棋盘。</p><h3>网络与局域网</h3><p>公网玩家访问相同的服务器网址；局域网玩家连接同一个网络，访问主机的 IP 与端口，例如 http://192.168.1.10:3000。分享链接时不要使用 localhost。</p><h3>观战与断线</h3><p>大厅点击「观战」即可同步旁观并聊天。玩家短暂断线会暂停落子，保留座位 90 秒；保持原标签页即可重连，超时会判负。对局中主动退出视为认输。</p><h3>休闲规则</h3><p>支持将军、将死、困毙（判负）及将帅不能照面。同一局面出现三次，或连续 120 半回合无吃子和兵卒移动，自动和棋。不采用竞赛长将/长捉判罚，无计时和悔棋。</p><p class="help-note">当前为单实例、免账号版本。服务重启后房间和棋谱会清空。每个标签页拥有独立身份，请勿把个人会话令牌发给别人。</p></div></dialog>
+  <dialog id="confirm-dialog"><div class="dialog-form"><div class="dialog-heading"><h2 id="confirm-title">确认操作</h2></div><p id="confirm-description" class="dialog-description"></p><div class="join-actions"><button id="confirm-cancel" class="button secondary" type="button">取消</button><button id="confirm-accept" class="button primary" type="button">确认</button></div></div></dialog>
+  <dialog id="share-dialog"><div class="dialog-form"><div class="dialog-heading"><h2>邀请好友入席</h2><button class="icon-button" data-close type="button" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button></div><p class="dialog-description">复制链接给好友，也可以直接告诉他房间号。</p><input id="share-link" class="field-input" readonly aria-label="房间邀请链接"><button id="copy-share" class="button primary full-width" type="button">复制邀请链接</button><p class="dialog-tip">局域网分享请用主机 IP 打开页面，再复制链接。</p></div></dialog>
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+</body>
+</html>

@@ -6,3 +6,5 @@ node_modules/
 *.log
 .DS_Store
 coverage/
+# 手工浏览器验证产生的截图和调试快照无需提交。
+.playwright-mcp/
