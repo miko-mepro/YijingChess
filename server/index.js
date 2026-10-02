@@ -4,7 +4,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
-import { newGame, opposite, playMove, SIDES } from '../public/xiangqi.js';
+import { newGame, opposite, playMove, publicGame, modeLabel, GAME_MODES, SIDES } from '../public/xiangqi.js';
 
 // 所有房间由单实例权威维护；服务重启会清空会话和棋局。
 const PORT = Number(process.env.PORT || 3000);
@@ -15,6 +15,8 @@ const MAX_SPECTATORS = 100;
 const RECONNECT_MS = 90_000;
 const sessions = new Map();
 const rooms = new Map();
+// 只在服务端洗牌，使用密码学随机数而非客户端提供的随机身份。
+const createGame = (mode) => newGame(mode, (max) => randomInt(max));
 const app = express();
 const httpServer = createServer(app);
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((x) => x.trim()).filter(Boolean);
@@ -80,7 +82,7 @@ function lobbyData() {
   return {
     online: io.sockets.sockets.size,
     rooms: [...rooms.values()].map((room) => ({
-      id: room.id, name: room.name, status: room.status, createdAt: room.createdAt,
+      id: room.id, name: room.name, mode: room.mode, status: room.status, createdAt: room.createdAt,
       red: playerInfo(room.seats.red), black: playerInfo(room.seats.black),
       spectators: [...room.spectators].filter((token) => connected(sessions.get(token))).length,
       canJoin: room.status !== 'playing' && (!room.seats.red || !room.seats.black),
@@ -89,14 +91,13 @@ function lobbyData() {
 }
 function broadcastLobby() { io.emit('lobby:state', lobbyData()); }
 function snapshot(room, session) {
-  const game = room.game;
   return {
-    id: room.id, name: room.name, status: room.status,
+    id: room.id, name: room.name, mode: room.mode, status: room.status,
     role: sideOf(room, session) || 'spectator',
     red: playerInfo(room.seats.red), black: playerInfo(room.seats.black), ready: room.ready,
     spectators: [...room.spectators].map((token) => playerInfo(token)).filter((p) => p?.online),
-    game: { board: game.board, turn: game.turn, ply: game.ply, check: game.check,
-      lastMove: game.lastMove, result: game.result, history: game.history },
+    // 玩家、观战者、同步和重连共用同一白名单快照，不发送任何未翻明身份。
+    game: publicGame(room.game),
     drawOffer: room.drawOffer, chat: room.chat,
     reconnectSeconds: RECONNECT_MS / 1000,
   };
@@ -210,14 +211,16 @@ io.on('connection', (socket) => {
     assertNoRoom(session);
     if (rooms.size >= MAX_ROOMS) throw new Error('房间已满，请加入现有房间');
     const side = data.side === 'black' ? 'black' : 'red';
-    const room = { id: allocateRoomId(), name: cleanText(data.name, 32, `${session.name}的棋室`),
+    const mode = data.gameMode ?? 'classic';
+    if (!GAME_MODES.includes(mode)) throw new Error('请选择有效的游戏模式');
+    const room = { id: allocateRoomId(), name: cleanText(data.name, 32, `${session.name}的棋室`), mode,
       status: 'waiting', seats: { red: null, black: null }, ready: { red: false, black: false },
-      spectators: new Set(), game: newGame(), drawOffer: null, chat: [],
+      spectators: new Set(), game: createGame(mode), drawOffer: null, chat: [],
       createdAt: Date.now(), updatedAt: Date.now() };
     room.seats[side] = session.token;
     rooms.set(room.id, room);
     session.roomId = room.id;
-    announce(room, `${session.name}创建了房间，等待棋友入座`);
+    announce(room, `${session.name}创建了${modeLabel(mode)}房间，等待棋友入座`);
     broadcastRoom(room);
     broadcastLobby();
     return { roomId: room.id };
@@ -260,11 +263,11 @@ io.on('connection', (socket) => {
     // 结束后先保留胜负界面，等双方准备好才重置棋盘开始下一局。
     room.ready[side] = !room.ready[side];
     if (SIDES.every((s) => room.seats[s] && room.ready[s] && connected(sessions.get(room.seats[s])))) {
-      room.game = newGame();
+      room.game = createGame(room.mode);
       room.status = 'playing';
       room.ready = { red: false, black: false };
       room.drawOffer = null;
-      announce(room, '双方已准备，对局开始 · 红方先行');
+      announce(room, `双方已准备，${modeLabel(room.mode)}开始 · 红方先行`);
     }
     broadcastRoom(room);
     broadcastLobby();
