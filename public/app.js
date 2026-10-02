@@ -11,6 +11,13 @@ let invitationHandled = false;
 // 动画只响应新的实时落子；刷新、观战加入和重开不会回放历史乌龙。
 let ownGoalTimer = null;
 let animatedKingSide = null;
+// 胜负短句只在对应视角生成：玩家一条自己的结果，观战者两条双方结果。
+let verdictTimer = null;
+const VERDICT_DURATION = 2400;
+const VERDICT_WORDS = {
+  win: ['一战封神！', '横扫千军！', '杀穿全场！', '天下无敌！'],
+  lose: ['全军覆没！', '一败涂地！', '惨遭碾压！', '当场破防！'],
+};
 
 // 某些隐私模式禁用 Storage，降级为当前页面内存，不阻止用户游玩。
 const memory = new Map();
@@ -110,10 +117,12 @@ socket.on('room:state', (room) => {
   invitationHandled = true;
   const fresh = !state.room || state.room.id !== room.id || state.room.role !== room.role;
   const changed = fresh || state.room.game.ply !== room.game.ply || state.room.status !== room.status;
-  const reset = fresh || room.game.ply < state.room.game.ply;
+  const reset = fresh || room.game.ply < state.room.game.ply
+    || (state.room.status === 'finished' && room.status !== 'finished');
   const ownGoal = !fresh && room.game.ply > state.room.game.ply && room.game.lastMove?.ownGoal;
+  const justEnded = !fresh && state.room.status !== 'finished' && room.status === 'finished' && room.game.result?.winner;
   state.room = room;
-  if (reset) stopOwnGoalAnimation();
+  if (reset) { stopOwnGoalAnimation(); stopVerdictAnimation(); }
   if (fresh) {
     closeDialogs();
     state.flipped = room.role === 'black';
@@ -129,10 +138,13 @@ socket.on('room:state', (room) => {
   $('lobby-view').hidden = true;
   $('room-view').hidden = false;
   renderRoom();
-  if (ownGoal) playOwnGoalAnimation(room.game.lastMove);
+  // 终局优先于乌龙大字；重复快照、刷新及结束后加入观战不重播胜负特效。
+  if (justEnded) playVerdictAnimation(room);
+  else if (ownGoal) playOwnGoalAnimation(room.game.lastMove);
 });
 socket.on('room:left', () => {
   stopOwnGoalAnimation();
+  stopVerdictAnimation();
   state.room = null;
   clearSelection(false);
   $('room-view').hidden = true;
@@ -276,6 +288,7 @@ function renderBoard() {
   if (!state.room) return;
   $('game-board').innerHTML = boardMarkup(state.room.game.board, true);
   positionKingReaction();
+  positionVerdictAnimation();
 }
 function clearSelection(render = true) { state.selected = null; state.targets = []; if (render) renderBoard(); }
 function canAct() {
@@ -398,7 +411,56 @@ function playOwnGoalAnimation(move) {
   positionKingReaction();
   ownGoalTimer = setTimeout(stopOwnGoalAnimation, 2800);
 }
-window.addEventListener('resize', positionKingReaction);
+// 观战提示固定在红黑各自半场，翻盘时交换上下位置，不依赖已被吃掉的将帅。
+function positionVerdictAnimation() {
+  if (!state.room || $('board-verdicts').hidden) return;
+  const rect = $('game-board').getBoundingClientRect();
+  const wrap = $('game-board').parentElement.getBoundingClientRect();
+  for (const card of $('board-verdicts').children) {
+    const homeY = card.dataset.verdictSide === 'red' ? 7.7 : 1.3;
+    const y = state.flipped ? 9 - homeY : homeY;
+    card.style.left = `${rect.left - wrap.left + rect.width / 2}px`;
+    card.style.top = `${rect.top - wrap.top + (57 + y * 54) / 600 * rect.height}px`;
+    card.style.fontSize = `${Math.max(24, Math.min(70, rect.width * .115))}px`;
+  }
+}
+// 清理元素和计时器，避免重开、退出或换房后遗留旧结果。
+function stopVerdictAnimation() {
+  clearTimeout(verdictTimer);
+  verdictTimer = null;
+  for (const id of ['player-verdict', 'board-verdicts']) {
+    $(id).hidden = true;
+    $(id).replaceChildren();
+  }
+}
+// 只生成当前角色可见的大字；同一对局使用统一文案索引，观战结果与玩家对应。
+function playVerdictAnimation(room) {
+  stopOwnGoalAnimation();
+  stopVerdictAnimation();
+  const spectator = room.role === 'spectator';
+  const sides = spectator ? ['red', 'black'] : [room.role];
+  const layer = $(spectator ? 'board-verdicts' : 'player-verdict');
+  const index = (Number(room.id) + room.game.ply) % VERDICT_WORDS.win.length;
+  for (const side of sides) {
+    const outcome = room.game.result.winner === side ? 'win' : 'lose';
+    const card = document.createElement('div');
+    card.className = `verdict-card ${outcome}${spectator ? ' spectator-verdict' : ' player-verdict'}`;
+    card.dataset.verdictSide = side;
+    const label = document.createElement('span');
+    label.className = 'verdict-label';
+    label.textContent = `${spectator ? `${side === 'red' ? '红' : '黑'}方 · ` : ''}${outcome === 'win' ? '胜利' : '败北'}`;
+    const word = document.createElement('strong');
+    word.className = 'verdict-word';
+    word.textContent = VERDICT_WORDS[outcome][index];
+    card.append(label, word);
+    layer.append(card);
+  }
+  layer.hidden = false;
+  positionVerdictAnimation();
+  verdictTimer = setTimeout(stopVerdictAnimation, VERDICT_DURATION);
+}
+// 两类特效随窗口尺寸重新定位；减少动态效果仍由全局 CSS 偏好设置控制。
+window.addEventListener('resize', () => { positionKingReaction(); positionVerdictAnimation(); });
 
 // 对局面板按公开角色设置按钮；观战者从界面和服务器两层被限制走棋。
 function renderPlayer(side) {
